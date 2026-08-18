@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+
+# Python bytecode caches
+__pycache__/
+*.pyc
+
+# VS Code personal settings
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Training outputs & logs
+runs/
+logs/
+
+AE4350_project_context.md
