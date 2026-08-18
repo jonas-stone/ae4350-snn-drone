@@ -49,6 +49,12 @@ class DroneNavEnv(gym.Env):
         # angular offset of each ray from "forward", going clockwise: [0, 45, 90, ... 315] deg
         self.ray_offsets = np.linspace(0, 2 * np.pi, self.n_rays, endpoint=False)
 
+        # --- episode / reward settings ---
+        self.max_steps = 400          # timeout length
+        self.goal_reward = 1.0
+        self.collision_penalty = -1.0
+        self.progress_coeff = 1.0
+        self.time_penalty = 0.01
 
 
     def reset(self, seed=None, options=None):
@@ -56,11 +62,15 @@ class DroneNavEnv(gym.Env):
         self.drone_pos = self.start.copy()
         self.heading = self.initial_heading
         self.obstacles = self._generate_obstacles()
-        observation = np.zeros(10, dtype=np.float32)  # placeholder until sensors exist
+        self.step_count = 0
+        self.prev_dist = self._dist_to_goal()
+        observation = self._get_observation()
         info = {}
+        
         return observation, info
 
     def step(self, action):
+        
         moves = {
             0: np.array([0.0,  1.0]),   # up
             1: np.array([0.0, -1.0]),   # down
@@ -70,11 +80,32 @@ class DroneNavEnv(gym.Env):
         new_pos = self.drone_pos + moves[action] * self.step_size
         self.drone_pos = np.clip(new_pos, [0, 0], [self.width, self.height])
 
+        observation = self._get_observation()
 
-        observation = np.zeros(10, dtype=np.float32)  # placeholder
-        reward = 0.0
-        terminated = False   # episode ended naturally (goal reached / crashed)
-        truncated = False    # episode cut off (e.g. timeout)
+        self.step_count += 1
+        new_dist = self._dist_to_goal()
+
+        # dense shaping: progress toward goal, minus a small time cost
+        reward = self.progress_coeff * (self.prev_dist - new_dist) - self.time_penalty
+        self.prev_dist = new_dist
+
+        collision = self._check_collision()
+
+        if collision:
+            reward += self.collision_penalty
+            terminated = True
+        elif self._dist_to_goal() <= self.goal_radius:
+            reward += self.goal_reward
+            terminated = True
+        else:
+            terminated = False
+
+
+        if self.step_count >= self.max_steps:
+            truncated = True   # episode cut off (timeout)
+        else:
+            truncated = False
+
         info = {}
         return observation, reward, terminated, truncated, info
 
@@ -106,6 +137,13 @@ class DroneNavEnv(gym.Env):
             plt.show()
         #plt.show()
         plt.close(fig)
+
+
+
+
+
+
+
 
     def _generate_obstacles(self):
         obstacles = []
@@ -153,3 +191,22 @@ class DroneNavEnv(gym.Env):
     def _ray_directions(self):
         bearings = self.heading + self.ray_offsets        # clockwise-from-North angles
         return np.stack([np.sin(bearings), np.cos(bearings)], axis=1)  # world directions
+
+    def _check_collision(self):
+        for obs in self.obstacles:
+            if self._rect_hits_point(obs, self.drone_pos, self.drone_radius):
+                return True
+        return False
+
+    def _dist_to_goal(self):
+        return np.linalg.norm(self.drone_pos - self.goal)
+
+    def _get_observation(self):
+        rays = self._get_ray_distances() / self.max_ray_length
+
+        offset = self.goal - self.drone_pos
+        offset = offset / np.array([self.width, self.height])    # -> roughly [-1, 1]
+        offset = (offset + 1.0) / 2.0                            # -> [0, 1]
+
+        obs = np.concatenate([rays, offset]).astype(np.float32)  # (10,)
+        return obs
