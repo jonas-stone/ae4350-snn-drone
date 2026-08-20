@@ -5,30 +5,29 @@ import time
 import numpy as np
 
 
-def train(num_episodes=200, gamma=0.99, lr=1e-3):
+def train(num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300):
     env = DroneNavEnv()
     policy = MLPPolicy()
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
-
     reward_history = []
+    best_rate = -1.0
     start = time.time()
 
     for episode in range(num_episodes):
-        log_probs, rewards = run_episode(env, policy)     # NO seed -> new obstacles each time
+        log_probs, rewards = run_episode(env, policy)
         returns = compute_returns(rewards, gamma)
         loss = compute_loss(log_probs, returns)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
+        optimizer.zero_grad(); loss.backward(); optimizer.step()
         reward_history.append(sum(rewards))
 
-        if (episode + 1) % 100 == 0:
-            avg = sum(reward_history[-100:]) / 100
-            elapsed = time.time() - start
-            print(f"episode {episode+1:4d} | avg reward (last 100): {avg:7.3f} | {elapsed:5.1f}s")
+        if (episode + 1) % eval_every == 0:
+            rate = evaluate(policy, num_episodes=100)          # greedy success rate
+            if rate > best_rate:
+                best_rate = rate
+                torch.save(policy.state_dict(), "mlp_policy_best.pt")   # keep the best
+            print(f"  -> episode {episode+1} | success {rate:.0%} | best {best_rate:.0%} | {time.time()-start:.0f}s")
 
+    print(f"best success rate: {best_rate:.0%}")
     return policy, reward_history
 
 
@@ -87,7 +86,7 @@ def plot_rewards(reward_history, window=20, save_path="learning_curve.png"):
     plt.close()
 
 
-def evaluate(policy, num_episodes=100, render_path=None):
+def evaluate(policy, num_episodes=100, render_path=None, greedy=True):
     env = DroneNavEnv()
     successes = 0
     last_traj, last_obs = None, None
@@ -98,8 +97,8 @@ def evaluate(policy, num_episodes=100, render_path=None):
         done = False
         info = {}
         while not done:
-            with torch.no_grad():                              # no gradients needed at eval
-                action, _ = policy.act(torch.from_numpy(obs), greedy=True)
+            with torch.no_grad():
+                action, _ = policy.act(torch.from_numpy(obs), greedy=greedy)
             obs, reward, terminated, truncated, info = env.step(action.item())
             traj.append(env.drone_pos.copy())
             done = terminated or truncated
@@ -134,12 +133,9 @@ def evaluate(policy, num_episodes=100, render_path=None):
 
 
 
-
-
-
-
 if __name__ == "__main__":
-    policy, history = train(num_episodes=2000)
-    torch.save(policy.state_dict(), "mlp_policy.pt")
+    policy, history = train(num_episodes=3000)
     plot_rewards(history)
-    evaluate(policy, num_episodes=200, render_path="trajectory.png")
+    best = MLPPolicy()
+    best.load_state_dict(torch.load("mlp_policy_best.pt"))
+    evaluate(best, num_episodes=200, render_path="trajectory.png")

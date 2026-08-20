@@ -22,22 +22,19 @@ class DroneNavEnv(gym.Env):
         # --- world geometry ---
         self.width = 10.0
         self.height = 10.0
-        self.start = np.array([0.5, 0.5], dtype=np.float32)
-        self.goal = np.array([9.5, 9.5], dtype=np.float32)
-        self.drone_radius = 0.2
-        self.goal_radius = 0.5   # how close counts as "reached" (used later)
-
+        self.drone_radius = 0.0   # point drone: sensing and collision are now consistent
+        self.goal_radius = 0.5    # how close counts as "reached"
         self.step_size = 0.2
 
-        # --- obstacle generation settings ---
-        self.n_obstacles = 8
-        self.obs_min_size = 0.5
-        self.obs_max_size = 2.0
-        self.margin = 0.8
-
-        # will hold the drone position and obstacle array once reset() runs
+        # fixed start (bottom-left corner); goal is sampled fresh & distant each episode
+        self.start = np.array([0.7, 0.7], dtype=np.float32)
+        self.goal = None
         self.drone_pos = None
-        self.obstacles = None
+        self.start_goal_clearance = 0.5   # keep the goal this far from any obstacle
+        self.min_start_goal_dist = 8.0    # goal must be at least this far from start
+
+        # --- obstacles: a hand-designed, fixed layout ---
+        self.obstacles = self._generate_obstacles()
 
         # --- heading (forward direction). Constant for now, rotation is a future upgrade ---
         self.initial_heading = 0.0   # radians; 0 = facing North (+y)
@@ -59,14 +56,18 @@ class DroneNavEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        # obstacles and start are fixed; only the goal changes each episode
+        while True:
+            self.goal = self._sample_free_point(self.start_goal_clearance)
+            if np.linalg.norm(self.goal - self.start) >= self.min_start_goal_dist:
+                break
         self.drone_pos = self.start.copy()
         self.heading = self.initial_heading
-        self.obstacles = self._generate_obstacles()
         self.step_count = 0
         self.prev_dist = self._dist_to_goal()
         observation = self._get_observation()
         info = {}
-        
+
         return observation, info
 
     def step(self, action):
@@ -117,7 +118,7 @@ class DroneNavEnv(gym.Env):
 
         ax.add_patch(Circle(self.goal, self.goal_radius, color='green'))
         ax.plot(self.start[0], self.start[1], 'gs')
-        ax.add_patch(Circle(self.drone_pos, self.drone_radius, color='blue'))
+        ax.add_patch(Circle(self.drone_pos, 0.15, color='blue'))  # 0.15 = display size only
 
         # plot beams
         dirs = self._ray_directions()
@@ -142,23 +143,30 @@ class DroneNavEnv(gym.Env):
 
 
     def _generate_obstacles(self):
-        obstacles = []
-        while len(obstacles) < self.n_obstacles:
-            valid = False
-            while valid == False:
-                w = self.np_random.uniform(self.obs_min_size, self.obs_max_size)
-                h = self.np_random.uniform(self.obs_min_size, self.obs_max_size)
-                x = self.np_random.uniform(0.0, self.width  - w)
-                y = self.np_random.uniform(0.0, self.height - h)
-
-                rect = [x, y, w, h]
-                if self._rect_hits_point(rect, self.start, self.margin) or \
-                self._rect_hits_point(rect, self.goal, self.margin):
-                    valid = False
-                else:
-                    valid = True
-            obstacles.append([x, y, w, h])
+        # hand-designed, fixed layout: asymmetric mix of blocks and walls of
+        # varied sizes, arranged to leave winding corridors to navigate.
+        # each row is [x, y, w, h] (bottom-left corner + width + height)
+        obstacles = [
+            [3.0, 3.5, 2.5, 1.2],   # wide block, center-left
+            [6.5, 1.0, 1.2, 3.0],   # tall block, lower-right
+            [1.0, 6.0, 1.8, 1.5],   # block, upper-left
+            [4.0, 6.5, 1.5, 2.5],   # tall block, upper-center
+            [7.0, 6.0, 2.2, 1.3],   # wide block, upper-right
+            [8.5, 2.5, 1.0, 2.0],   # block, right edge
+            [1.5, 2.0, 1.3, 1.3],   # small block, lower-left
+            [5.8, 5.0, 1.0, 1.0],   # small block, center
+            [1.8, 8.0, 1.8, 0.8],   # low wall, upper-left
+        ]
         return np.array(obstacles, dtype=np.float32)
+
+    def _sample_free_point(self, clearance):
+        # uniformly sample a point that is at least `clearance` away from every obstacle
+        while True:
+            p = self.np_random.uniform(
+                low=[0.0, 0.0], high=[self.width, self.height]
+            ).astype(np.float32)
+            if not any(self._rect_hits_point(obs, p, clearance) for obs in self.obstacles):
+                return p
 
     def _rect_hits_point(self, rect, point, margin):
         x, y, w, h = rect
