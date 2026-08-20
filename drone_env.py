@@ -85,28 +85,24 @@ class DroneNavEnv(gym.Env):
         self.step_count += 1
         new_dist = self._dist_to_goal()
 
-        # dense shaping: progress toward goal, minus a small time cost
         reward = self.progress_coeff * (self.prev_dist - new_dist) - self.time_penalty
         self.prev_dist = new_dist
 
-        collision = self._check_collision()
-
-        if collision:
+        info = {}
+        if self._check_collision():
             reward += self.collision_penalty
             terminated = True
-        elif self._dist_to_goal() <= self.goal_radius:
+            info["reached_goal"] = False
+        elif new_dist <= self.goal_radius:
             reward += self.goal_reward
             terminated = True
+            info["reached_goal"] = True
         else:
             terminated = False
 
+        truncated = self.step_count >= self.max_steps
 
-        if self.step_count >= self.max_steps:
-            truncated = True   # episode cut off (timeout)
-        else:
-            truncated = False
-
-        info = {}
+        observation = self._get_observation()
         return observation, reward, terminated, truncated, info
 
     def render(self, save_path=None):
@@ -185,9 +181,48 @@ class DroneNavEnv(gym.Env):
         return self.max_ray_length
 
     def _get_ray_distances(self):
-        dirs = self._ray_directions()
-        return np.array([self._cast_ray(d) for d in dirs], dtype=np.float32)
+        # Analytic ray/axis-aligned-box intersection (the "slab method"), fully vectorized.
+        # For a ray p + t*d, the distance to a box is found by algebra, with no marching.
+        dirs = self._ray_directions()               # (R, 2)
+        px, py = self.drone_pos[0], self.drone_pos[1]
+        dx = dirs[:, 0]                             # (R,)
+        dy = dirs[:, 1]                             # (R,)
 
+        # --- distance to the arena walls: the ray starts inside the box [0,W]x[0,H]
+        #     and EXITS at the nearer of the two axis exit-times ---
+        with np.errstate(divide="ignore", invalid="ignore"):
+            # a ray parallel to an axis (dx or dy == 0) never exits via that axis's
+            # walls -> exit time is +inf; substitute it instead of computing 0/0
+            tx_exit = np.where(dx != 0.0,
+                               np.maximum((0.0 - px) / dx, (self.width - px) / dx),
+                               np.inf)                                       # (R,)
+            ty_exit = np.where(dy != 0.0,
+                               np.maximum((0.0 - py) / dy, (self.height - py) / dy),
+                               np.inf)                                       # (R,)
+        t_wall = np.minimum(tx_exit, ty_exit)       # (R,)
+
+        # --- distance to each obstacle: the ENTRY time into box [x1,x2]x[y1,y2] ---
+        ox1 = self.obstacles[:, 0]                  # (M,)
+        oy1 = self.obstacles[:, 1]
+        ox2 = ox1 + self.obstacles[:, 2]
+        oy2 = oy1 + self.obstacles[:, 3]
+        dxc = dx[:, None]                           # (R, 1) -> broadcasts with (M,) to (R, M)
+        dyc = dy[:, None]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            txa = (ox1 - px) / dxc                  # (R, M)
+            txb = (ox2 - px) / dxc
+            tya = (oy1 - py) / dyc
+            tyb = (oy2 - py) / dyc
+        t_near = np.maximum(np.minimum(txa, txb), np.minimum(tya, tyb))  # (R, M) enter box
+        t_far = np.minimum(np.maximum(txa, txb), np.maximum(tya, tyb))   # (R, M) leave box
+        hit = (t_near <= t_far) & (t_far >= 0.0)    # boxes actually struck, ahead of us
+        t_hit = np.where(hit, np.maximum(t_near, 0.0), np.inf)           # (R, M)
+        t_obstacle = t_hit.min(axis=1)              # (R,) nearest obstacle per ray
+
+        dists = np.minimum(t_wall, t_obstacle)
+        dists = np.clip(dists, 0.0, self.max_ray_length)
+        return dists.astype(np.float32)
+        
     def _ray_directions(self):
         bearings = self.heading + self.ray_offsets        # clockwise-from-North angles
         return np.stack([np.sin(bearings), np.cos(bearings)], axis=1)  # world directions
