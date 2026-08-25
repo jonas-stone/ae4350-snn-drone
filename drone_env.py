@@ -3,6 +3,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
+from collections import deque
 
 class DroneNavEnv(gym.Env):
     """A 2D drone navigating to a fixed goal through random rectangular obstacles."""
@@ -22,19 +23,25 @@ class DroneNavEnv(gym.Env):
         # --- world geometry ---
         self.width = 10.0
         self.height = 10.0
-        self.drone_radius = 0.0   # point drone: sensing and collision are now consistent
+        self.drone_radius = 0.0   # point drone: sensing and collision consistent
         self.goal_radius = 0.5    # how close counts as "reached"
         self.step_size = 0.2
 
-        # fixed start (bottom-left corner); goal is sampled fresh & distant each episode
-        self.start = np.array([0.7, 0.7], dtype=np.float32)
+        # fixed start at the CENTER; goal sampled fresh each episode in ANY direction
+        self.start = np.array([5.0, 5.0], dtype=np.float32)
         self.goal = None
         self.drone_pos = None
         self.start_goal_clearance = 0.5   # keep the goal this far from any obstacle
-        self.min_start_goal_dist = 8.0    # goal must be at least this far from start
+        self.min_start_goal_dist = 4.0    # goal must be at least this far from start
 
         # --- obstacles: a hand-designed, fixed layout ---
         self.obstacles = self._generate_obstacles()
+
+        # --- grid for the obstacle-aware (path) distance reward ---
+        self.grid_res = 0.2                              # cell size
+        self.grid_nx = int(self.width / self.grid_res)
+        self.grid_ny = int(self.height / self.grid_res)
+        self._blocked = self._build_blocked_mask()       # fixed: obstacles don't move
 
         # --- heading (forward direction). Constant for now, rotation is a future upgrade ---
         self.initial_heading = 0.0   # radians; 0 = facing North (+y)
@@ -48,8 +55,9 @@ class DroneNavEnv(gym.Env):
 
         # --- episode / reward settings ---
         self.max_steps = 400          # timeout length
-        self.goal_reward = 1.0
+        self.goal_reward = 10.0
         self.collision_penalty = -1.0
+        self.wall_penalty = -0.05 
         self.progress_coeff = 1.0
         self.time_penalty = 0.01
 
@@ -64,7 +72,8 @@ class DroneNavEnv(gym.Env):
         self.drone_pos = self.start.copy()
         self.heading = self.initial_heading
         self.step_count = 0
-        self.prev_dist = self._dist_to_goal()
+        self._path_field = self._build_path_field()      # BFS distance-to-goal over free cells
+        self.prev_path_dist = self._path_dist_to_goal()
         observation = self._get_observation()
         info = {}
 
@@ -79,22 +88,28 @@ class DroneNavEnv(gym.Env):
             3: np.array([1.0,  0.0]),   # right
         }
         new_pos = self.drone_pos + moves[action] * self.step_size
-        self.drone_pos = np.clip(new_pos, [0, 0], [self.width, self.height])
+        clipped_pos = np.clip(new_pos, [0, 0], [self.width, self.height])
+        hit_wall = not np.array_equal(new_pos, clipped_pos)   # move got clamped by a border
+        self.drone_pos = clipped_pos
 
         observation = self._get_observation()
 
         self.step_count += 1
-        new_dist = self._dist_to_goal()
+        new_path_dist = self._path_dist_to_goal()
 
-        reward = self.progress_coeff * (self.prev_dist - new_dist) - self.time_penalty
-        self.prev_dist = new_dist
+        reward = self.progress_coeff * (self.prev_path_dist - new_path_dist) - self.time_penalty
+        self.prev_path_dist = new_path_dist
+        
+        if hit_wall:
+            reward += self.wall_penalty
+
 
         info = {}
         if self._check_collision():
             reward += self.collision_penalty
             terminated = True
             info["reached_goal"] = False
-        elif new_dist <= self.goal_radius:
+        elif self._dist_to_goal() <= self.goal_radius:
             reward += self.goal_reward
             terminated = True
             info["reached_goal"] = True
@@ -175,18 +190,6 @@ class DroneNavEnv(gym.Env):
         inside_y = y - margin <= py <= y + h + margin
         return inside_x and inside_y
 
-    def _cast_ray(self, direction):
-        dist = 0.0
-        while dist < self.max_ray_length:
-            point = self.drone_pos + dist * direction
-            if not (0 <= point[0] <= self.width and 0 <= point[1] <= self.height):
-                return dist
-            for obs in self.obstacles:
-                if self._rect_hits_point(obs, point, 0.0):
-                    return dist
-            dist += self.ray_step
-
-        return self.max_ray_length
 
     def _get_ray_distances(self):
         # Analytic ray/axis-aligned-box intersection (the "slab method"), fully vectorized.
@@ -243,6 +246,59 @@ class DroneNavEnv(gym.Env):
 
     def _dist_to_goal(self):
         return np.linalg.norm(self.drone_pos - self.goal)
+
+    def _build_blocked_mask(self):
+        # obstacles are fixed, so this runs ONCE. cell (i,j) is blocked if its
+        # center lies inside any obstacle.
+        blocked = np.zeros((self.grid_nx, self.grid_ny), dtype=bool)
+        for i in range(self.grid_nx):
+            cx = (i + 0.5) * self.grid_res
+            for j in range(self.grid_ny):
+                cy = (j + 0.5) * self.grid_res
+                for obs in self.obstacles:
+                    if self._rect_hits_point(obs, (cx, cy), 0.0):
+                        blocked[i, j] = True
+                        break
+        return blocked
+
+    def _build_path_field(self):
+        # BFS out from the goal cell over free cells -> true navigable distance to goal
+        nx, ny = self.grid_nx, self.grid_ny
+        dist = np.full((nx, ny), np.inf, dtype=np.float32)
+        gi = min(max(int(self.goal[0] / self.grid_res), 0), nx - 1)
+        gj = min(max(int(self.goal[1] / self.grid_res), 0), ny - 1)
+        if self._blocked[gi, gj]:
+            return dist                        # goal cell blocked (rare) -> fallback handles it
+        dist[gi, gj] = 0.0
+        q = deque([(gi, gj)])
+        while q:
+            i, j = q.popleft()
+            for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1)):   # 4-connectivity (cardinal moves)
+                ni, nj = i + di, j + dj
+                if 0 <= ni < nx and 0 <= nj < ny and not self._blocked[ni, nj] and np.isinf(dist[ni, nj]):
+                    dist[ni, nj] = dist[i, j] + self.grid_res
+                    q.append((ni, nj))
+        return dist
+
+    def _path_dist_to_goal(self):
+        i = min(max(int(self.drone_pos[0] / self.grid_res), 0), self.grid_nx - 1)
+        j = min(max(int(self.drone_pos[1] / self.grid_res), 0), self.grid_ny - 1)
+        d = self._path_field[i, j]
+        if not np.isinf(d):
+            return float(d)
+        # blocked cell: use the nearest free neighbor's distance (+ one cell) so the
+        # field stays continuous and entering an obstacle NEVER lowers the distance
+        best = np.inf
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                ni, nj = i + di, j + dj
+                if 0 <= ni < self.grid_nx and 0 <= nj < self.grid_ny:
+                    nd = self._path_field[ni, nj]
+                    if not np.isinf(nd) and nd < best:
+                        best = nd
+        if np.isinf(best):
+            return float(self._dist_to_goal())   # truly isolated cell (very rare)
+        return float(best) + self.grid_res
 
     def _get_observation(self):
         rays = self._get_ray_distances() / self.max_ray_length

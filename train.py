@@ -1,13 +1,18 @@
 import torch
 from drone_env import DroneNavEnv
-from networks import MLPPolicy
+from networks import MLPPolicy, SNNPolicy
 import time
 import numpy as np
 
 
-def train(num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300):
+def train(train_which = 'SNN', num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300):
+
     env = DroneNavEnv()
-    policy = MLPPolicy()
+    if train_which == 'MLP':
+        policy = MLPPolicy()
+    else:
+        policy = SNNPolicy()
+
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
     reward_history = []
     best_rate = -1.0
@@ -21,10 +26,13 @@ def train(num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300):
         reward_history.append(sum(rewards))
 
         if (episode + 1) % eval_every == 0:
-            rate = evaluate(policy, num_episodes=100)          # greedy success rate
+            rate = evaluate(policy, num_episodes=100, greedy=False, temperature=0.3)          # greedy success rate
             if rate > best_rate:
                 best_rate = rate
-                torch.save(policy.state_dict(), "mlp_policy_best.pt")   # keep the best
+                if train_which == 'MLP':
+                    torch.save(policy.state_dict(), "mlp_policy_best.pt")   # keep the best
+                else:
+                    torch.save(policy.state_dict(), "snn_policy_best.pt")   # keep the best
             print(f"  -> episode {episode+1} | success {rate:.0%} | best {best_rate:.0%} | {time.time()-start:.0f}s")
 
     print(f"best success rate: {best_rate:.0%}")
@@ -57,8 +65,7 @@ def compute_returns(rewards, gamma=0.99):
         G = r + gamma * G          # this reward + discounted future
         returns.insert(0, G)       # prepend, so order matches the timesteps
     returns = torch.tensor(returns, dtype=torch.float32)
-
-    # standardize for stable, well-scaled gradients
+    # standardize per episode (this is what makes early learning work)
     returns = (returns - returns.mean()) / (returns.std() + 1e-8)
     return returns
 
@@ -86,25 +93,57 @@ def plot_rewards(reward_history, window=20, save_path="learning_curve.png"):
     plt.close()
 
 
-def evaluate(policy, num_episodes=100, render_path=None, greedy=True):
+def evaluate(policy, num_episodes=100, render_path=None, greedy=True, temperature=1.0, watch=False, watch_delay=0.004):
     env = DroneNavEnv()
+    if watch:
+        plt.ion()
+        fig, ax = plt.subplots(figsize=(6, 6))
+    
+    
     successes = 0
     last_traj, last_obs = None, None
 
     for ep in range(num_episodes):
-        obs, _ = env.reset()
+        obs, _ = env.reset(seed=ep)
+
+        if watch:
+            ax.clear()
+            ax.set_xlim(0, env.width); ax.set_ylim(0, env.height); ax.set_aspect('equal')
+            for x, y, w, h in env.obstacles:
+                ax.add_patch(Rectangle((x, y), w, h, color='gray'))
+            ax.add_patch(Circle(env.goal, env.goal_radius, color='green'))
+            ax.plot(env.start[0], env.start[1], 'ks', markersize=8)
+            dot,  = ax.plot([], [], 'bo', markersize=8)
+            trail, = ax.plot([], [], '-', color='tab:blue', lw=1)
+            xs, ys = [], []
+
         traj = [env.drone_pos.copy()]
         done = False
         info = {}
         while not done:
             with torch.no_grad():
-                action, _ = policy.act(torch.from_numpy(obs), greedy=greedy)
+                action, _ = policy.act(torch.from_numpy(obs), greedy=greedy, temperature=temperature)
             obs, reward, terminated, truncated, info = env.step(action.item())
             traj.append(env.drone_pos.copy())
+
+            if watch:
+                xs.append(env.drone_pos[0]); ys.append(env.drone_pos[1])
+                dot.set_data([env.drone_pos[0]], [env.drone_pos[1]])
+                trail.set_data(xs, ys)
+                ax.set_title(f"seed {ep}")
+                plt.pause(watch_delay)
+
             done = terminated or truncated
+
+        if watch:
+            ax.set_title(f"seed {ep} — {'REACHED' if info.get('reached_goal') else 'FAILED'}")
+            plt.pause(0.6)
+
         if info.get("reached_goal"):
             successes += 1
         last_traj, last_obs = np.array(traj), env.obstacles.copy()
+
+
 
     rate = successes / num_episodes
     print(f"success rate: {successes}/{num_episodes} = {rate:.0%}")
@@ -133,9 +172,56 @@ def evaluate(policy, num_episodes=100, render_path=None, greedy=True):
 
 
 
+def plot_multi_goal(policy, seeds, save_path="multi_goal.png", greedy=True):
+    # overlay the policy's trajectory to several different goals on one figure,
+    # to see whether it bends toward each goal or just barrels to one corner
+    env = DroneNavEnv()
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.set_xlim(0, env.width)
+    ax.set_ylim(0, env.height)
+    ax.set_aspect('equal')
+
+    for x, y, w, h in env.obstacles:
+        ax.add_patch(Rectangle((x, y), w, h, color='gray'))
+    ax.plot(env.start[0], env.start[1], 'ks', markersize=9, label='start')
+
+    colors = plt.cm.tab10(np.linspace(0, 1, len(seeds)))
+    reached_count = 0
+    for seed, c in zip(seeds, colors):
+        obs, _ = env.reset(seed=seed)
+        traj = [env.drone_pos.copy()]
+        done, info = False, {}
+        while not done:
+            with torch.no_grad():
+                action, _ = policy.act(torch.from_numpy(obs), greedy=greedy)
+            obs, _, terminated, truncated, info = env.step(action.item())
+            traj.append(env.drone_pos.copy())
+            done = terminated or truncated
+        traj = np.array(traj)
+        reached = bool(info.get("reached_goal", False))
+        reached_count += reached
+        ax.plot(traj[:, 0], traj[:, 1], '-', color=c, linewidth=1.5)
+        ax.add_patch(Circle(env.goal, env.goal_radius, color=c, alpha=0.4))   # this goal
+        ax.plot(traj[-1, 0], traj[-1, 1], 'o' if reached else 'x',
+                color=c, markersize=10)                                        # end (o=reached)
+
+    ax.set_title(f"{reached_count}/{len(seeds)} goals reached")
+    ax.legend(loc='upper left')
+    plt.savefig(save_path)
+    plt.close(fig)
+
+
 if __name__ == "__main__":
-    policy, history = train(num_episodes=3000)
+    train_which = 'MLP';
+    policy, history = train(train_which=train_which, num_episodes=3000)
     plot_rewards(history)
-    best = MLPPolicy()
-    best.load_state_dict(torch.load("mlp_policy_best.pt"))
-    evaluate(best, num_episodes=200, render_path="trajectory.png")
+    if train_which == 'SNN':
+        best = SNNPolicy()
+        best.load_state_dict(torch.load("snn_policy_best.pt"))
+        evaluate(best, num_episodes=200, render_path="snn_trajectory.png")
+        plot_multi_goal(best, seeds=range(10), save_path="snn_multi_goal.png")
+    else:
+        best = MLPPolicy()
+        best.load_state_dict(torch.load("mlp_policy_best.pt"))
+        evaluate(best, num_episodes=200, render_path="mlp_trajectory.png")
+        plot_multi_goal(best, seeds=range(10), save_path="mlp_multi_goal.png")
