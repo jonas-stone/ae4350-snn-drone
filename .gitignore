@@ -23,3 +23,8 @@ learning_curve.png
 trajectory.png
 multi_goal.png
 path_field.png
+mlp_multi_goal.png
+mlp_trajectory.png
+snn_multi_goal.png
+reward_field.png
+snn_trajectory.png
