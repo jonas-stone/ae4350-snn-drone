@@ -1,28 +1,50 @@
 import torch
 from drone_env import DroneNavEnv
-from networks import MLPPolicy, SNNPolicy
+from networks import MLPPolicy, SNNPolicy, ValueNet
 import time
 import numpy as np
 
 
-def train(train_which = 'SNN', num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300):
+def train(train_which = 'SNN', num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300, seed=None):
+
+    if seed is not None:
+        torch.manual_seed(seed)     # reproducible weight init + action sampling
+        np.random.seed(seed)
 
     env = DroneNavEnv()
+    if seed is not None:
+        env.reset(seed=seed)        # seed the goal-sampling RNG stream (stays deterministic after)
     if train_which == 'MLP':
         policy = MLPPolicy()
     else:
         policy = SNNPolicy()
 
-    optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
+    critic = ValueNet()
+    actor_opt  = torch.optim.Adam(policy.parameters(), lr=lr)
+    critic_opt = torch.optim.Adam(critic.parameters(), lr=lr)
+
+
     reward_history = []
+    success_history = []           # (episode, T=0.3 success) at each eval checkpoint
     best_rate = -1.0
     start = time.time()
 
     for episode in range(num_episodes):
-        log_probs, rewards = run_episode(env, policy)
+        log_probs, rewards, states = run_episode(env, policy)
         returns = compute_returns(rewards, gamma)
-        loss = compute_loss(log_probs, returns)
-        optimizer.zero_grad(); loss.backward(); optimizer.step()
+
+        states_t = torch.stack(states)                     # (T, 10)
+        values = critic(states_t)                          # V(s_t), shape (T,), carries grad
+
+        advantages = returns - values.detach()             # "how much better than expected?"
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        actor_loss  = -(torch.stack(log_probs) * advantages).sum()   # reinforce by ADVANTAGE
+        critic_loss = ((values - returns) ** 2).mean()               # make V(s) predict G
+
+        actor_opt.zero_grad();  actor_loss.backward();  actor_opt.step()
+        critic_opt.zero_grad(); critic_loss.backward(); critic_opt.step()
+
         reward_history.append(sum(rewards))
 
         if (episode + 1) % eval_every == 0:
@@ -33,16 +55,18 @@ def train(train_which = 'SNN', num_episodes=3000, gamma=0.99, lr=1e-3, eval_ever
                     torch.save(policy.state_dict(), "mlp_policy_best.pt")   # keep the best
                 else:
                     torch.save(policy.state_dict(), "snn_policy_best.pt")   # keep the best
+            success_history.append((episode + 1, rate))
             print(f"  -> episode {episode+1} | success {rate:.0%} | best {best_rate:.0%} | {time.time()-start:.0f}s")
 
     print(f"best success rate: {best_rate:.0%}")
-    return policy, reward_history
+    return policy, reward_history, success_history
 
 
 
 
 def run_episode(env, policy, seed=None):
     obs, _ = env.reset(seed=seed)
+    states = []
     log_probs = []
     rewards = []
     done = False
@@ -54,9 +78,10 @@ def run_episode(env, policy, seed=None):
 
         log_probs.append(log_prob)                 # keep as a TENSOR (carries grad_fn)
         rewards.append(reward)                     # keep as a plain float
+        states.append(obs_t)
         done = terminated or truncated
 
-    return log_probs, rewards
+    return log_probs, rewards, states
 
 def compute_returns(rewards, gamma=0.99):
     returns = []
@@ -64,10 +89,7 @@ def compute_returns(rewards, gamma=0.99):
     for r in reversed(rewards):
         G = r + gamma * G          # this reward + discounted future
         returns.insert(0, G)       # prepend, so order matches the timesteps
-    returns = torch.tensor(returns, dtype=torch.float32)
-    # standardize per episode (this is what makes early learning work)
-    returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-    return returns
+    return torch.tensor(returns, dtype=torch.float32)
 
 def compute_loss(log_probs, returns):
     log_probs = torch.stack(log_probs)      # list of scalar tensors -> one 1D tensor
@@ -93,7 +115,7 @@ def plot_rewards(reward_history, window=20, save_path="learning_curve.png"):
     plt.close()
 
 
-def evaluate(policy, num_episodes=100, render_path=None, greedy=True, temperature=1.0, watch=False, watch_delay=0.004):
+def evaluate(policy, num_episodes=100, render_path=None, greedy=True, temperature=1.0, watch=False, watch_delay=0.002):
     env = DroneNavEnv()
     if watch:
         plt.ion()
@@ -211,17 +233,31 @@ def plot_multi_goal(policy, seeds, save_path="multi_goal.png", greedy=True):
     plt.close(fig)
 
 
+def save_history(tag, reward_history, success_history):
+    # persist raw curves so report figures are reproducible without retraining
+    import csv
+    with open(f"{tag}_reward_history.csv", "w", newline="") as f:
+        w = csv.writer(f); w.writerow(["episode", "episode_reward"])
+        for i, r in enumerate(reward_history):
+            w.writerow([i + 1, r])
+    with open(f"{tag}_success_history.csv", "w", newline="") as f:
+        w = csv.writer(f); w.writerow(["episode", "success_T0.3"])
+        for ep, rate in success_history:
+            w.writerow([ep, rate])
+    print(f"saved {tag}_reward_history.csv and {tag}_success_history.csv")
+
+
 if __name__ == "__main__":
-    train_which = 'MLP';
-    policy, history = train(train_which=train_which, num_episodes=3000)
-    plot_rewards(history)
+    train_which = 'MLP'
+    tag = train_which.lower()
+    policy, reward_history, success_history = train(train_which=train_which, num_episodes=6000)
+    save_history(tag, reward_history, success_history)
+    plot_rewards(reward_history, save_path=f"{tag}_learning_curve.png")
     if train_which == 'SNN':
         best = SNNPolicy()
         best.load_state_dict(torch.load("snn_policy_best.pt"))
-        evaluate(best, num_episodes=200, render_path="snn_trajectory.png")
-        plot_multi_goal(best, seeds=range(10), save_path="snn_multi_goal.png")
     else:
         best = MLPPolicy()
         best.load_state_dict(torch.load("mlp_policy_best.pt"))
-        evaluate(best, num_episodes=200, render_path="mlp_trajectory.png")
-        plot_multi_goal(best, seeds=range(10), save_path="mlp_multi_goal.png")
+    evaluate(best, num_episodes=200, render_path=f"{tag}_trajectory.png")
+    plot_multi_goal(best, seeds=range(10), save_path=f"{tag}_multi_goal.png")

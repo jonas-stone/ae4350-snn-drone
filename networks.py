@@ -25,6 +25,17 @@ class MLPPolicy(nn.Module):
             action = dist.sample() # sample takes an action according to the probabilities of each option
         return action, dist.log_prob(action)
 
+class ValueNet(nn.Module):
+    def __init__(self, obs_dim=10, hidden=64):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(obs_dim, hidden), nn.Tanh(),
+            nn.Linear(hidden, hidden),  nn.Tanh(),
+            nn.Linear(hidden, 1),        # 10 -> 64 -> 64 -> 1  (a single value)
+        )
+
+    def forward(self, x):
+        return self.net(x).squeeze(-1)   # drop trailing dim: (...,1) -> (...) scalar per state
 
 import snntorch as snn
 from snntorch import surrogate
