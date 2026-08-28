@@ -5,7 +5,9 @@ import time
 import numpy as np
 
 
-def train(train_which='SNN', num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300, seed=None):
+def train(train_which='SNN', num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=300, seed=None, save_path=None):
+    if save_path is None:                       # default: unchanged single-model filename
+        save_path = "mlp_policy_best.pt" if train_which == 'MLP' else "snn_policy_best.pt"
     if seed is not None:
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -43,8 +45,7 @@ def train(train_which='SNN', num_episodes=3000, gamma=0.99, lr=1e-3, eval_every=
             rate = evaluate(policy, num_episodes=100, greedy=False, temperature=0.3)
             if rate > best_rate:
                 best_rate = rate
-                torch.save(policy.state_dict(),
-                           "mlp_policy_best.pt" if train_which == 'MLP' else "snn_policy_best.pt")
+                torch.save(policy.state_dict(), save_path)
             success_history.append((episode + 1, rate))
             print(f"  -> episode {episode+1} | success {rate:.0%} | best {best_rate:.0%} | {time.time()-start:.0f}s")
 

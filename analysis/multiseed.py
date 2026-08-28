@@ -20,7 +20,8 @@ episodes = None
 
 for s in SEEDS:
     print(f"\n===== {NETWORK} seed {s} =====")
-    _, _, success_history = train(train_which=NETWORK, num_episodes=EPISODES, seed=s)
+    _, _, success_history = train(train_which=NETWORK, num_episodes=EPISODES, seed=s,
+                                  save_path=f"{NETWORK.lower()}_seed{s}_best.pt")  # never clobber the delivered *_policy_best.pt
     eps   = [ep for ep, _ in success_history]
     rates = [r for _, r in success_history]
     episodes = eps
