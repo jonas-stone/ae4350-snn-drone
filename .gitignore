@@ -114,3 +114,41 @@ report/TU Delft report template/Images/TU delft logo.png
 report/TU Delft report template/Images/tudelft_logo.png
 report/TU Delft report template/Images/world.pdf
 PROJECT_CONTEXT.md
+report/cover.jpg
+report/cover.tex
+report/introduction.tex
+report/latexmkrc
+report/lorem-ipsum.tex
+report/main.tex
+report/preface.tex
+report/README.md
+report/report.bib
+report/report.tex
+report/tank.jpg
+report/title.tex
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-color.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-cover.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-foldout-page.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-font-fourier.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-font-roboto.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-logo.pdf
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-logo.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-math-sans.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-patch-Greek-roboto.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-patch-varGreek-unicode.sty
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-report.cls
+report/-texmf/tex/latex/tudelft-dissertation/tudelft-tikz-customisation.sty
+report/Images/action_response.pdf
+report/Images/csweep.pdf
+report/Images/firing_stats.pdf
+report/Images/mlp_learning_curve.pdf
+report/Images/multiseed_mlp_5seeds.pdf
+report/Images/multiseed_overlay.pdf
+report/Images/multiseed_snn_3seeds.pdf
+report/Images/reward_field.pdf
+report/Images/snn_learning_curve.pdf
+report/Images/threshold_sweep.pdf
+report/Images/trajectory_compare.pdf
+report/Images/TU delft logo.png
+report/Images/tudelft_logo.png
+report/Images/world.pdf
