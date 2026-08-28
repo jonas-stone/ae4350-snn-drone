@@ -1,3 +1,6 @@
+"""sweep the deployment temperature on the trained mlp."""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # import core modules when run from the project root
 import torch
 from networks import MLPPolicy
 from train import evaluate

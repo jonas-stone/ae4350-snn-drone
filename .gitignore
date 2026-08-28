@@ -1,18 +1,16 @@
-# Virtual environment
+
 .venv/
 
-# Python bytecode caches
 __pycache__/
 *.pyc
 
-# VS Code personal settings
 .vscode/
 
-# OS junk
+
 .DS_Store
 Thumbs.db
 
-# Training outputs & logs
+
 runs/
 logs/
 
@@ -39,3 +37,79 @@ report/part2.tex
 report/part3.tex
 report/part4.tex
 report/refs.bib
+figures/action_response.pdf
+figures/action_response.png
+figures/csweep.pdf
+figures/firing_stats.pdf
+figures/firing_stats.png
+figures/mlp_learning_curve.pdf
+figures/multiseed_mlp_5seeds.pdf
+figures/multiseed_mlp_5seeds.png
+figures/multiseed_overlay.pdf
+figures/multiseed_overlay.png
+figures/multiseed_snn_3seeds.pdf
+figures/multiseed_snn_3seeds.png
+figures/reward_field.pdf
+figures/snn_learning_curve.pdf
+figures/snn_learning_curve.png
+figures/threshold_sweep.pdf
+figures/trajectory_compare.pdf
+figures/trajectory_compare.png
+figures/world.pdf
+report/current report/appendices.tex
+report/current report/comandos.tex
+report/current report/main.tex
+report/current report/part1.tex
+report/current report/part2.tex
+report/current report/part3.tex
+report/current report/part4.tex
+report/current report/refs.bib
+report/current report/Images/multiseed_mlp_5seeds.png
+report/current report/Images/multiseed_overlay.png
+report/current report/Images/snn_learning_curve.png
+report/current report/Images/trajectory_compare.png
+report/current report/Images/TU delft logo.png
+report/TU Delft report template/appendices.tex
+report/TU Delft report template/cover.jpg
+report/TU Delft report template/cover.tex
+report/TU Delft report template/introduction.tex
+report/TU Delft report template/latexmkrc
+report/TU Delft report template/lorem-ipsum.tex
+report/TU Delft report template/main.tex
+report/TU Delft report template/part1.tex
+report/TU Delft report template/part2.tex
+report/TU Delft report template/part3.tex
+report/TU Delft report template/part4.tex
+report/TU Delft report template/preface.tex
+report/TU Delft report template/README.md
+report/TU Delft report template/refs.bib
+report/TU Delft report template/report.bib
+report/TU Delft report template/report.tex
+report/TU Delft report template/tank.jpg
+report/TU Delft report template/title.tex
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-color.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-cover.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-foldout-page.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-font-fourier.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-font-roboto.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-logo.pdf
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-logo.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-math-sans.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-patch-Greek-roboto.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-patch-varGreek-unicode.sty
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-report.cls
+report/TU Delft report template/-texmf/tex/latex/tudelft-dissertation/tudelft-tikz-customisation.sty
+report/TU Delft report template/Images/action_response.pdf
+report/TU Delft report template/Images/csweep.pdf
+report/TU Delft report template/Images/firing_stats.pdf
+report/TU Delft report template/Images/mlp_learning_curve.pdf
+report/TU Delft report template/Images/multiseed_mlp_5seeds.pdf
+report/TU Delft report template/Images/multiseed_overlay.pdf
+report/TU Delft report template/Images/multiseed_snn_3seeds.pdf
+report/TU Delft report template/Images/reward_field.pdf
+report/TU Delft report template/Images/snn_learning_curve.pdf
+report/TU Delft report template/Images/threshold_sweep.pdf
+report/TU Delft report template/Images/trajectory_compare.pdf
+report/TU Delft report template/Images/TU delft logo.png
+report/TU Delft report template/Images/tudelft_logo.png
+report/TU Delft report template/Images/world.pdf

@@ -1,5 +1,9 @@
+"""render the bfs reward field (linear vs sqrt funnel)."""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # import core modules when run from the project root
 import numpy as np
 import matplotlib.pyplot as plt
+import plotstyle; plotstyle.apply()
 from matplotlib.patches import Rectangle, Circle
 from drone_env import DroneNavEnv
 
@@ -29,11 +33,11 @@ def draw(ax, field, title):
     ax.set_title(title)
     plt.colorbar(im, ax=ax, fraction=0.046, label="distance to goal")
 
-fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 6))
+fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 5))
 draw(a1, bfs,        "BFS path-distance, LINEAR (current reward)")
 draw(a2, bfs_funnel, "BFS path-distance, SQRT funnel (proposed)")
 fig.suptitle(f"reward field, seed {SEED}   (goal = red circle, start = white square)")
 plt.tight_layout()
-plt.savefig("reward_field.png", dpi=120)
+plt.savefig("figures/reward_field.pdf", dpi=120)
 plt.close(fig)
 print("saved reward_field.png")

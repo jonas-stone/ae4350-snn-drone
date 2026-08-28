@@ -1,14 +1,16 @@
-"""Multi-seed training: run k reproducible seeds and report mean +/- std.
-This is the rubric's 'statistics on multiple runs (uncertainty)' requirement --
-single-seed results are explicitly sub-par."""
+"""train k reproducible seeds and report mean +/- std."""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # import core modules when run from the project root
+import os
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
+import plotstyle; plotstyle.apply()
 from train import train
 
 # ---- config (edit these) ----
-NETWORK = "MLP"          # "MLP" (~14 min/seed) or "SNN" (~2 hr/seed)
-SEEDS = [0, 1, 2, 3, 4]  # how many independent runs
+NETWORK = "SNN"          # "MLP" (~14 min/seed) or "SNN" (~2 hr/seed)
+SEEDS = [0, 1, 2] #, 3, 4]  # how many independent runs
 EPISODES = 6000
 # ------------------------------
 
@@ -45,10 +47,10 @@ plt.fill_between(episodes, (mean - std) * 100, (mean + std) * 100,
 plt.xlabel("episode"); plt.ylabel("success rate (%)  @ T=0.3")
 plt.title(f"{NETWORK}: success over {len(SEEDS)} seeds (mean +/- std)")
 plt.legend(); plt.grid(alpha=0.3)
-plt.tight_layout(); plt.savefig(f"multiseed_{tag}.png", dpi=120); plt.close()
+plt.tight_layout(); plt.savefig(f"figures/multiseed_{tag}.png", dpi=120); plt.close()
 
 # ---- save aggregated data ----
-with open(f"multiseed_{tag}.csv", "w", newline="") as f:
+with open(f"data/multiseed_{tag}.csv", "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["episode", "mean_success", "std_success"] + [f"seed{s}" for s in SEEDS])
     for i, ep in enumerate(episodes):

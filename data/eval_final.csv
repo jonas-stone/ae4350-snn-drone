@@ -1,0 +1,7 @@
+model,checkpoint,success_rate_T0.3_N500
+MLP (actor-critic),mlp_policy_best.pt,0.6120
+SNN main (C=8),snn_policy_best.pt,0.7500
+SNN C=2,snn_C2_best.pt,0.4560
+SNN C=4,snn_C4_best.pt,0.6120
+SNN C=8,snn_C8_best.pt,0.4480
+SNN C=16,snn_C16_best.pt,0.6020

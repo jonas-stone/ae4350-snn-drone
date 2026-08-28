@@ -1,10 +1,13 @@
-"""Robust final numbers: re-evaluate every SAVED model on a large fixed seeded
-goal set. This removes EVALUATION noise (500 goals, same for all models) and
-avoids the upward bias of the 'best-checkpoint' metric. No retraining."""
+"""evaluate every saved model on the same 500 seeded goals."""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # import core modules when run from the project root
+import os
 import csv
 import torch
 from networks import MLPPolicy, SNNPolicy
 from train import evaluate
+
+os.makedirs("data", exist_ok=True)
 
 N = 500          # identical seeded goals (seeds 0..499) for every model
 T = 0.3          # deployment temperature
@@ -33,7 +36,7 @@ for label, make, ckpt in models:
     rows.append((label, ckpt, rate))
 
 # save a clean table for the report
-with open("eval_final.csv", "w", newline="") as f:
+with open("data/eval_final.csv", "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["model", "checkpoint", f"success_rate_T{T}_N{N}"])
     for label, ckpt, rate in rows:
