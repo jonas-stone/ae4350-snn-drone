@@ -26,6 +26,7 @@ plt.xticks(x, Cs, fontsize=TICK_SIZE); plt.yticks(fontsize=TICK_SIZE)
 plt.ylim(0, 100); #plt.xlim(-0.5, len(Cs) - 0.5)
 plt.xlabel("integration cycles $C$", fontsize=LABEL_SIZE)
 plt.ylabel("success rate (%), 500 goals @ T=0.3", fontsize=LABEL_SIZE)
+plt.ylim(0, 100);
 plt.title("SNN performance vs integration cycles", fontsize=TITLE_SIZE)
 plt.grid(alpha=0.3)
 plt.tight_layout(); plt.savefig(OUT, dpi=120); plt.close()

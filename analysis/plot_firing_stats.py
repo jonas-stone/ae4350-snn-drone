@@ -33,7 +33,7 @@ print(f"dead neurons (<1%):   {dead:.1%}")
 print(f"saturated (>99%):     {saturated:.1%}")
 
 plt.figure(figsize=FIGSIZE)
-plt.hist(rates, bins=BINS, color="tab:purple", edgecolor="k")
+plt.hist(rates, bins=BINS, color="lightblue", edgecolor="k")
 plt.axvline(mean_rate, color="red", ls="--", label=f"mean {mean_rate:.1%}")
 plt.xlabel("per-neuron average firing rate", fontsize=LABEL_SIZE)
 plt.ylabel("number of hidden neurons", fontsize=LABEL_SIZE)
